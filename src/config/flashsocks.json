@@ -1,0 +1,7 @@
+{
+    "bind_IPv4": "127.0.0.0",
+    "bind_IPv6": "127.0.0.0",
+    "username": "flashsocks",
+    "password": "flashsocks",
+    "cipher": "AES256-GCM"
+}
