@@ -164,6 +164,4 @@ typedef struct _conn_req
 int socks5_init();
 int socks5_shakehands(int client_fd); 
 
-void socket_run();
-
 #endif

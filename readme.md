@@ -12,6 +12,7 @@ try to run tests/server/socks5Test, it runs but many bugs...
 
 - [ ] fix bug and optimize it
 - [ ] support username and password authentication
+- [ ] UDP support
 - [ ] support traffic encryption
 - [ ] web manager
 

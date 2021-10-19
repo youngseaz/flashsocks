@@ -11,10 +11,11 @@
 #include<netinet/in.h>
 #include<arpa/inet.h>
 
-#include "handler.h"
-#include "socks5.h"
 #include "../third-pard/sockets/rdwrn.h"
 #include "../utils/logger.h"
+#include "../utils/io.h"
+#include "handler.h"
+#include "socks5.h"
 
 #ifndef EPOLL_SIZE
 #define EPOLL_SIZE 4096
@@ -34,8 +35,9 @@
 * read data from srcfd and then write to dstfd
 *
 */
-static void socks5_tcp_relay(int srcfd, int dstfd) {
+static int socks5_tcp_relay(int srcfd, int dstfd) {
     int n;
+    // https://www.cnblogs.com/carekee/articles/2904603.html
     n = read(srcfd, socks5_buf, SOCKS5_BUFSIZE);
     if (n < 0 && errno == ECONNRESET) {
         LOG_ERROR("read error");
@@ -103,29 +105,6 @@ static void epoll_del(int epfd, int fd)
 }
 
 
-static int setnonblocking(int fd)
-{
-    int ret, flags;
-
-    flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1) 
-    {
-        LOG_ERROR("get fd status failed: %s", strerror(errno));
-        return -1;
-    }
-
-    flags |= O_NONBLOCK;
-    ret = fcntl(fd, F_SETFL, flags);
-    if (ret == -1) 
-    {
-        LOG_ERROR("set fd status failed: %s", strerror(errno));
-        return -1;
-    }
-    return 0;
-}
-
-
-
 void tcp_handler()
 {
     int ret, i, n = 0;
@@ -140,8 +119,7 @@ void tcp_handler()
     int listenfd = socks5_init();
 
     epfd = epoll_create(EPOLL_SIZE);
-    if (epfd == -1)
-    {
+    if (epfd == -1) {
         LOG_CRITICAL("epoll_create error: %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
@@ -149,30 +127,32 @@ void tcp_handler()
     ev.events = EPOLLIN | EPOLLET;
     ev.data.fd = listenfd;
     ret = epoll_ctl(epfd, EPOLL_CTL_ADD, listenfd, &ev);
-    if (ret == -1)
-    {
+    if (ret == -1) {
         LOG_CRITICAL("epoll_ctl error: %s", strerror(errno));
         close(listenfd);
         exit(EXIT_FAILURE);
     }
-    while (true)
-    {
+    while (true) {
         // int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout);
-        nfds = epoll_wait(epfd, event, MAX_EVENTS, EPOLL_TIMEOUT);
-        if (ret == -1)
-        {
+        // EPOLL_TIMEOUT should not be zero, that will cause high CPU occupy rate, timout in micro second
+        nfds = epoll_wait(epfd, event, MAX_EVENTS, 30);
+        if (ret == -1) {
             LOG_ERROR("epoll_wait error: %s", strerror(errno));
-            //exit(EXIT_FAILURE);
             continue;
         }
-        for (i = 0; i < nfds; i++)
-        {
+        for (i = 0; i < nfds; i++) {
             events = event[i].events;
-            if ( events & EPOLLERR || events & EPOLLHUP || (! events & EPOLLIN)) 
-            {
-                LOG_ERROR("poll has error");
+            // EPOLLERR and EPOLLHUP will be detected even though not set
+            // https://blog.csdn.net/itworld123/article/details/104854238
+            if ( events & EPOLLERR || events & EPOLLHUP || ( events & EPOLLRDHUP))  {
+                LOG_INFO("unnormal close socket");
+                /*
                 pairs = (socks5_event_t *)event[i].data.ptr;
                 close(pairs->srcfd);
+                close(pairs->dstfd);
+                epoll_ctl(epfd, EPOLL_CTL_DEL, pairs->srcfd, &ev);
+                epoll_ctl(epfd, EPOLL_CTL_DEL, pairs->dstfd, &ev);
+                */
                 continue;
             }
             else if (listenfd == event[i].data.fd)
@@ -183,13 +163,11 @@ void tcp_handler()
                     socklen_t client_addr_len = sizeof(client_addr);
                     memset(&client_addr, 0, client_addr_len);
                     client_fd = accept(listenfd, (struct sockaddr *)&client_addr, &client_addr_len);
-                    if (client_fd == -1)
-                    {
-                        //LOG_ERROR("accept error: %s", strerror(errno));
-                        LOG_ERROR("accept error!");
+                    if (client_fd == -1) {
+                        LOG_ERROR("accept error: %s", strerror(errno));
                         break;
                     }
-                    LOG_INFO("accept IP %s", inet_ntoa(client_addr.sin_addr));
+                    LOG_INFO("accept ip %s", inet_ntoa(client_addr.sin_addr));
                     remote_fd = socks5_shakehands(client_fd);
                     if (remote_fd == -1) {
                         continue;
@@ -202,8 +180,7 @@ void tcp_handler()
                     pairs->srcfd = client_fd;
                     pairs->dstfd = remote_fd;
                     ret = epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, &ev);
-                    if (ret == -1)
-                    {
+                    if (ret == -1) {
                         LOG_CRITICAL("epoll_ctl error: %s", strerror(errno));
                         continue;
                     }
@@ -219,9 +196,17 @@ void tcp_handler()
                 }
             }
             else {
-                LOG_DEBUG("TEST: %s", strerror(errno));
+                //LOG_DEBUG("TEST: %s", strerror(errno));
                 pairs = (socks5_event_t *)event[i].data.ptr;
-                socks5_tcp_relay(pairs->srcfd, pairs->dstfd);
+                ret = socks5_tcp_relay(pairs->srcfd, pairs->dstfd);
+                if (ret = 0) {
+                    LOG_INFO("normal close socket");
+                    pairs = (socks5_event_t *)event[i].data.ptr;
+                    close(pairs->srcfd);
+                    close(pairs->dstfd);
+                    epoll_ctl(epfd, EPOLL_CTL_DEL, pairs->srcfd, &ev);
+                    epoll_ctl(epfd, EPOLL_CTL_DEL, pairs->dstfd, &ev);
+                }
             }   
         }
     }

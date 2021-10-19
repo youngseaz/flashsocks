@@ -13,7 +13,7 @@ CFLAGS=-Wall
 
 all: socks5Test
 
-objects = socks5Test.o socks5.o server.o logger.o rdwrn.o handler.o
+objects = socks5Test.o socks5.o server.o logger.o rdwrn.o handler.o io.o
 
 socks5Test: $(objects)
 	cc $(objects) -g -o socks5Test
@@ -21,7 +21,7 @@ socks5Test: $(objects)
 socks5Test.o: socks5Test.c
 	cc -g -c -o socks5Test.o socks5Test.c
 
-socks5.o: socks5.c socks5.h handler.h rdwrn.h
+socks5.o: socks5.c socks5.h handler.h rdwrn.h io.h
 	cc -g -c -o socks5.o $<
 
 server.o: server.c server.h
@@ -33,8 +33,11 @@ logger.o: logger.c logger.h
 rdwrn.o: rdwrn.c rdwrn.h
 	cc -g -c -o rdwrn.o $<
 
-handler.o: handler.c handler.h socks5.h
+handler.o: handler.c handler.h socks5.h io.h
 	cc -g -c -o handler.o $<
+
+io.o: io.c io.h logger.h
+	cc -g -c -o io.o $<
 
 clean:
 	rm *.o
