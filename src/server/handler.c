@@ -38,13 +38,14 @@
 static int socks5_tcp_relay(int srcfd, int dstfd) {
     int n;
     // https://www.cnblogs.com/carekee/articles/2904603.html
-    n = read(srcfd, socks5_buf, SOCKS5_BUFSIZE);
-    if (n < 0 && errno == ECONNRESET) {
+    n = recv(srcfd, socks5_buf, SOCKS5_BUFSIZE, MSG_NOSIGNAL);
+    if (n <= 0 && errno == ECONNRESET) {
         LOG_ERROR("read error");
+        return n;
     }
-    n = writen(dstfd, socks5_buf, n);
-    if (n < 0 && errno == EPIPE) {
-        LOG_ERROR("write error");
+    n = send(dstfd, socks5_buf, n, MSG_NOSIGNAL);
+    if (n <= 0 && errno == EPIPE) {
+        LOG_ERROR("write error, connection closed.");
     }
     return n;
 }
@@ -199,7 +200,7 @@ void tcp_handler()
                 //LOG_DEBUG("TEST: %s", strerror(errno));
                 pairs = (socks5_event_t *)event[i].data.ptr;
                 ret = socks5_tcp_relay(pairs->srcfd, pairs->dstfd);
-                if (ret = 0) {
+                if (ret <= 0) {
                     LOG_INFO("normal close socket");
                     pairs = (socks5_event_t *)event[i].data.ptr;
                     close(pairs->srcfd);
