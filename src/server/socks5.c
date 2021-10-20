@@ -181,6 +181,8 @@ static int connect_remote(conn_req_t conn_req_data)
 	}
 	// setnonblocking(fd);
 	// here set nonblock will cause "Operation now in progress"
+	int set = 1;
+	setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = req->port;
@@ -255,6 +257,8 @@ int socks5_init()
 		exit(-1);
 	}
 	setnonblocking(socks5_fd);
+	int set = 1;
+	setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
 
 	int on = 1;
 	// enable socket reuse
