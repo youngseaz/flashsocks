@@ -1,9 +1,18 @@
 #ifndef _IO_H
 #define _IO_H
 
-#ifndef BUFSIZE
-#define BUFSIZE 4096
+#ifndef RBUFSIZE
+#define RBUFSIZE 16384   // 1024 * 16 = 16KB
 #endif
+
+
+typedef _ring_buffer {
+    char rbuffer[RBUFSIZE];
+    size_t nleft;
+}
+
+
+void write
 
 
 int setnonblocking(int fd);

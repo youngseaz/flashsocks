@@ -179,21 +179,24 @@ static int connect_remote(conn_req_t conn_req_data)
 		LOG_ERROR("create socket fail: %s", strerror(errno));
 		return -1;
 	}
-	// setnonblocking(fd);
+	setnonblocking(fd);
 	// here set nonblock will cause "Operation now in progress"
-	int set = 1;
-	setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
+	int sockopt = 1;
+	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof(sockopt));
+
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = req->port;
 	addr.sin_addr.s_addr = req->addr.ipv4;
 	if (req->cmd == SOCK5_CMD_TYPE_CONNECT) {
 		ret = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
-		if (ret != 0 ) {
+		/*
+		if (ret != 0 && errno != EINPROGRESS) {
 			LOG_ERROR("failed to connect to %s: %s", "ip", strerror(errno));
 			close(fd);
 			return -1;
 		}
+		*/
 	}
 	LOG_INFO("connected to remote ip %s", inet_ntoa(addr.sin_addr));
 	return fd;
@@ -210,13 +213,9 @@ static int connect_remote(conn_req_t conn_req_data)
 
 int socks5_shakehands(int client_fd)
 {
-	//assert(client_fd > 2);
-
-	
 	char buf[32];
 	int ret, remote_fd;
 	conn_req_t conn_req_data;
-
 
 	readn(client_fd, buf, 3); // receive auth data
 
@@ -224,14 +223,12 @@ int socks5_shakehands(int client_fd)
 	writen(client_fd, "\x05\x00", 2);  // no auth method
 	
 	ret = parse_conn_req(client_fd, &conn_req_data);
-	if(ret == -1)
-	{
+	if(ret == -1) {
 		close(client_fd);
 		return -1;
 	}
 	remote_fd = connect_remote(conn_req_data);
-	if(remote_fd == -1)
-	{
+	if(remote_fd == -1) {
 		LOG_ERROR("failed to connect to remote: %s", strerror(errno));
 		return -1;
 	}
@@ -254,15 +251,13 @@ int socks5_init()
 	socks5_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (socks5_fd == -1) {
 		LOG_CRITICAL("create socket fail: %s", strerror(errno));
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 	setnonblocking(socks5_fd);
-	int set = 1;
-	setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
 
-	int on = 1;
-	// enable socket reuse
-	ret = setsockopt(socks5_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on) );
+	int sockopt = 1;
+	setsockopt(socks5_fd, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof(sockopt));
+
 	if (ret == -1) {
 		LOG_ERROR("set listening socket fd reuse error: %s", strerror(errno));
 	}
@@ -274,13 +269,13 @@ int socks5_init()
 	ret = bind(socks5_fd, (struct sockaddr*)&socks5_addr, sizeof(socks5_addr));
 	if (ret == -1) {
 		LOG_CRITICAL("bind error: %s", strerror(errno));
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 	
 	ret = listen(socks5_fd, 4096);
 	if (ret == -1) {
 		LOG_CRITICAL("listening port error: %s", strerror(errno));
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 	LOG_INFO("socks5 server started.");
 	return socks5_fd;

@@ -30,6 +30,33 @@
 #endif
 
 
+
+ssize_t sendn(int fd, const void *buffer, size_t n)
+{
+    ssize_t numWritten;                 /* # of bytes written by last write() */
+    size_t totWritten;                  /* Total # of bytes written so far */
+    const char *buf;
+
+    buf = buffer;                       /* No pointer arithmetic on "void *" */
+    for (totWritten = 0; totWritten < n; ) {
+        numWritten = send(fd, buf, n - totWritten, MSG_NOSIGNAL);
+
+        /* The "write() returns 0" case should never happen, but the
+           following ensures that we don't loop forever if it does */
+
+        if (numWritten <= 0) {
+            if (numWritten == -1 && errno == EINTR || errno == EAGAIN)
+                continue;               /* Interrupted --> restart write() */
+            else
+                return -1;              /* Some other error */
+        }
+        totWritten += numWritten;
+        buf += numWritten;
+    }
+    return totWritten;                  /* Must be 'n' bytes if we get here */
+}
+
+
 /*
 * 
 * read data from srcfd and then write to dstfd
@@ -39,16 +66,23 @@ static int socks5_tcp_relay(int srcfd, int dstfd) {
     int n;
     // https://www.cnblogs.com/carekee/articles/2904603.html
     n = recv(srcfd, socks5_buf, SOCKS5_BUFSIZE, MSG_NOSIGNAL);
-    if (n <= 0 && errno == ECONNRESET) {
-        LOG_ERROR("read error");
+    if (n <= 0 )//&& errno == ECONNRESET) 
+    {
+        LOG_ERROR("recv error: %s", strerror(errno));
         return n;
     }
-    n = send(dstfd, socks5_buf, n, MSG_NOSIGNAL);
-    if (n <= 0 && errno == EPIPE) {
-        LOG_ERROR("write error, connection closed.");
+
+    LOG_DEBUG("read and write %d bytes.", n);
+    //n = send(dstfd, socks5_buf, n, MSG_NOSIGNAL);
+    n = sendn(dstfd, socks5_buf, n);
+    if (n <= 0 )//&& errno == EPIPE) 
+    {
+        LOG_ERROR("send error: %s", strerror(errno));
     }
     return n;
 }
+
+
 
 
 /*
@@ -137,7 +171,7 @@ void tcp_handler()
         // int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout);
         // EPOLL_TIMEOUT should not be zero, that will cause high CPU occupy rate, timout in micro second
         nfds = epoll_wait(epfd, event, MAX_EVENTS, 30);
-        if (ret == -1) {
+        if (ret == -1 && errno == EINTR) {
             LOG_ERROR("epoll_wait error: %s", strerror(errno));
             continue;
         }
